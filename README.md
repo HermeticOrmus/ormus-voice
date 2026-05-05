@@ -108,7 +108,9 @@ as they're added.
 
 | Var | Default | Effect |
 |---|---|---|
-| `VOICE_PASTE_SECONDS` | `8` | Recording duration |
+| `VOICE_PASTE_MODE` | `toggle` | `toggle` (press to start, press to stop) or `fixed` (record N seconds then auto-paste) |
+| `VOICE_PASTE_SECONDS` | `8` | Fixed-mode recording length |
+| `VOICE_PASTE_MAX_SECONDS` | `120` | Toggle-mode hard cap if you forget to press stop |
 | `VOICE_PASTE_MODEL` | `base.en` | Model name (`tiny.en`, `base.en`, `small.en`, `medium.en`) |
 | `VOICE_PASTE_MODEL_PATH` | `${XDG_DATA_HOME}/ormus-voice/models/ggml-${MODEL}.bin` | Explicit model path |
 | `VOICE_PASTE_THREADS` | `$(nproc)` | whisper-cli thread count |
@@ -126,7 +128,8 @@ as they're added.
 | Hallucination filter | ? | ? | ✓ silence gate + repetition / known-output filter |
 | Backend swappable | ✗ | ✗ | ✓ (one bash file) |
 | AI rewrite hook | ✓ headline feature | ? | ✓ (Claude API + Ollama) |
-| Push-to-talk | ? | ? | planned |
+| Toggle (press start / press stop) | ✓ | ? | ✓ default mode |
+| Push-to-talk (hold) | ? | ? | planned (needs key-up handling) |
 
 VibeTyper's product surface wasn't documented well enough on the public
 web to fill in for sure — happy to update if anyone has links.
@@ -162,9 +165,10 @@ the cleanup. Full guide:
 
 ## Roadmap
 
-- [ ] Push-to-talk via key-up handling (currently fixed-duration only)
+- [x] AI rewrite hook (Claude API + Ollama scripts)
+- [x] Toggle mode (press to start, press to stop)
+- [ ] True push-to-talk (hold) — needs key-up handling in ormus-term
 - [ ] Last-transcript replay (re-paste without re-recording)
-- [ ] GPU Vulkan recipe verified end-to-end (currently CPU-validated)
 - [ ] Recipes for Alacritty, kitty, gnome-terminal, foot
 
 ## License

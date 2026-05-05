@@ -73,8 +73,43 @@ longer recording time:
 
 ```bash
 # In a Claude tab's startup
-export VOICE_PASTE_SECONDS=20
+export VOICE_PASTE_MAX_SECONDS=300   # 5-minute cap in toggle mode
 ```
 
 (Variables defined in your shell are inherited by the `sh -c` subshell
 that runs `voice_paste_command`.)
+
+## Toggle vs fixed recording
+
+Two recording modes:
+
+- **`VOICE_PASTE_MODE=toggle`** (default) — first Super+V starts
+  recording, second Super+V stops + transcribes + pastes. Closer to
+  WisprFlow's UX. Recording caps at `VOICE_PASTE_MAX_SECONDS` (default
+  120 s) if you forget to press again. The system notification shows
+  "🎙 Recording — press Super+V again to stop" with that long timeout
+  so you can see the state without the indicator going stale.
+
+- **`VOICE_PASTE_MODE=fixed`** — record `VOICE_PASTE_SECONDS` (default
+  8 s) then auto-transcribe. Single-press flow, useful when you know
+  in advance how long the message is.
+
+To set globally:
+
+```bash
+echo -n '"VOICE_PASTE_MODE=fixed $HOME/.local/bin/whisper-paste"' \
+  > ~/.config/cosmic/solutions.ormus.OrmusTerm/v1/voice_paste_command
+```
+
+State for toggle mode lives at `${XDG_RUNTIME_DIR:-/tmp}/ormus-voice/`.
+A stale state file from a crashed recording (e.g. machine slept
+mid-take) will cause the next press to enter the stop phase with no
+audio — it will notify "🤫 Empty" and clear cleanly. After that, a
+normal new press starts fresh.
+
+### What's not yet supported
+
+True **hold-to-talk** (record while held, stop on release) requires
+key-up handling in the terminal — currently ormus-term only fires
+`Action::VoicePaste` on key-down. That's tracked on the roadmap. For
+now, toggle is the closest available UX.

@@ -21,3 +21,13 @@
 - `bin/voice-rewrite-ollama` — local-only alternative using a small Ollama model (recommended: `llama3.2:3b`).
 - `docs/recipes/ai-rewrite.md` — setup guide, model recommendations, tunables, failure modes.
 - Failure-tolerant wiring — if the rewriter exits non-zero or returns empty, the wrapper falls through to raw paste so a flaky network or missing API key never breaks voice paste; only the cleanup is lost.
+
+### Added (toggle mode)
+- `VOICE_PASTE_MODE=toggle` (now default) — first Super+V starts recording, second Super+V stops + transcribes + pastes. Closer to WisprFlow's UX.
+- `VOICE_PASTE_MAX_SECONDS` (default 120) — hard cap on toggle-mode recordings if you forget to press stop.
+- Per-user state at `${XDG_RUNTIME_DIR:-/tmp}/ormus-voice/recording.state` — auto-cleaned on logout.
+- `VOICE_PASTE_MODE=fixed` preserves the original 8-second-record-then-paste flow as an opt-in.
+- True hold-to-talk (press-down + press-up) is on the roadmap — needs key-up handling in ormus-term.
+
+### Fixed
+- Notification replacement — earlier versions left "✍️ Transcribing" stuck on screen for its 30 s timeout while a "✓ Pasted" briefly flashed alongside it. Each `note()` call now uses `--print-id`/`--replace-id` so subsequent notifications replace the previous one in-place. State persists across the toggle's two-process boundary via `${XDG_RUNTIME_DIR}/ormus-voice/notify.id`.
