@@ -1,0 +1,18 @@
+# Build artefacts (none yet, but reserved)
+build/
+dist/
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# Models — never commit; downloaded by install.sh
+*.bin
+*.gguf

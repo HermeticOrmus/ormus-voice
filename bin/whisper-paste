@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Voice → text helper invoked by Ormus Terminal's Super+V (VoicePaste).
+#
+# Pipeline: arecord → silence gate (sox) → whisper.cpp → hallucination
+# filter → stdout. The terminal bracketed-pastes whatever this prints —
+# so an EMPTY stdout intentionally pastes nothing.
+#
+# Switched from python whisper to whisper.cpp (whisper-cli) on 2026-05-05.
+# Speedup: ~5-6x on CPU alone (no Python startup, native C++ + AVX-512).
+# GPU upgrade path documented in ormus-voice README.
+#
+# Tunables (env):
+#   VOICE_PASTE_SECONDS    recording length (default 8)
+#   VOICE_PASTE_MODEL      whisper model name, e.g. base.en, medium.en
+#                          (default base.en)
+#   VOICE_PASTE_MODEL_PATH explicit ggml model path (overrides MODEL)
+#   VOICE_PASTE_RMS_MIN    min RMS for "speech detected" (default 0.005)
+#   VOICE_PASTE_THREADS    whisper-cli thread count (default: nproc)
+
+set -euo pipefail
+
+DURATION=${VOICE_PASTE_SECONDS:-8}
+MODEL_NAME=${VOICE_PASTE_MODEL:-base.en}
+RMS_MIN=${VOICE_PASTE_RMS_MIN:-0.005}
+THREADS=${VOICE_PASTE_THREADS:-$(nproc)}
+
+# Model resolution: explicit path wins, else look in standard data dir.
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/models"
+MODEL_PATH="${VOICE_PASTE_MODEL_PATH:-$DATA_DIR/ggml-${MODEL_NAME}.bin}"
+
+TMP_WAV=$(mktemp -t voice-XXXXXX.wav)
+TMP_DIR=$(mktemp -d -t voice-XXXXXX)
+trap 'rm -f "$TMP_WAV"; rm -rf "$TMP_DIR"' EXIT
+
+note() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send --hint=int:transient:1 -t "$1" -a "Ormus Voice" "$2" "${3:-}" 2>/dev/null || true
+    fi
+}
+
+beep() {
+    local sound="$1"
+    if command -v paplay >/dev/null 2>&1; then
+        paplay --volume=20000 "/usr/share/sounds/freedesktop/stereo/$sound.oga" 2>/dev/null &
+    fi
+}
+
+# 0) Preconditions
+if ! command -v arecord >/dev/null 2>&1; then
+    note 4000 "Voice paste failed" "arecord not installed (apt install alsa-utils)"
+    exit 1
+fi
+if ! command -v whisper-cli >/dev/null 2>&1; then
+    note 4000 "Voice paste failed" "whisper-cli not in PATH"
+    exit 1
+fi
+if [ ! -f "$MODEL_PATH" ]; then
+    note 5000 "Voice paste failed" "model not found at $MODEL_PATH"
+    exit 1
+fi
+
+# 1) Record at whisper's native 16 kHz mono — avoids double resampling.
+note "$((DURATION * 1000 + 500))" "🎙 Recording" "${DURATION}s — speak now"
+beep message
+arecord -q -d "$DURATION" -f S16_LE -r 16000 -c 1 -t wav "$TMP_WAV" 2>/dev/null
+beep complete
+
+# 2) Silence gate — whisper hallucinates on near-silent audio.
+if command -v sox >/dev/null 2>&1; then
+    RMS=$(sox "$TMP_WAV" -n stat 2>&1 | awk -F'[: ]+' '/RMS *amplitude/{print $4; exit}')
+    if [ -n "$RMS" ] && awk -v r="$RMS" -v m="$RMS_MIN" 'BEGIN{exit !(r < m)}'; then
+        note 2500 "🤫 Silent" "no speech detected (RMS=$RMS)"
+        exit 0
+    fi
+fi
+
+# 3) Transcribe with whisper.cpp.
+#    -nt: no timestamps in output  -np: only print results to stdout
+#    Output: clean transcript to stdout, nothing on stderr.
+note 30000 "✍️ Transcribing" "running whisper.cpp ($MODEL_NAME, ${THREADS}t)…"
+
+TRIMMED=$(whisper-cli \
+    -m "$MODEL_PATH" \
+    -f "$TMP_WAV" \
+    -l en \
+    -t "$THREADS" \
+    -nt -np \
+    2>/dev/null \
+    | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+if [ -z "$TRIMMED" ]; then
+    note 2500 "🤫 Empty transcript" "whisper produced no text"
+    exit 0
+fi
+
+# 4) Filter known hallucination patterns. These almost always come from
+#    silence/noise that survived the RMS gate.
+LOWER=$(echo "$TRIMMED" | tr '[:upper:]' '[:lower:]' | tr -d '.,!?')
+case "$LOWER" in
+    "" | "you" | "thank you" | "thanks for watching" | "bye" | "okay" | \
+    "thank you for watching" | "music" | "the" | "subscribe")
+        note 2500 "🤫 Hallucinated silence" "(\"$TRIMMED\" — not pasted)"
+        exit 0
+        ;;
+esac
+# Repetition cascade: same word repeating ≥4 times in a row.
+if echo "$LOWER" | grep -qE '\b(\w+)\b([[:space:],-]+\1\b){3,}'; then
+    note 2500 "🤫 Hallucinated repetition" "(not pasted: \"${TRIMMED:0:60}…\")"
+    exit 0
+fi
+
+PREVIEW=$(echo "$TRIMMED" | head -c 80)
+note 3000 "✓ Pasted" "$PREVIEW"
+echo "$TRIMMED"
