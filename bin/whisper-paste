@@ -6,16 +6,26 @@
 # so an EMPTY stdout intentionally pastes nothing.
 #
 # Switched from python whisper to whisper.cpp (whisper-cli) on 2026-05-05.
-# Speedup: ~5-6x on CPU alone (no Python startup, native C++ + AVX-512).
-# GPU upgrade path documented in ormus-voice README.
+# Speedup: ~5-6x on CPU; ~10× with Vulkan on a dGPU for medium.en.
+#
+# IMPORTANT — device selection:
+#   On systems with both an Intel iGPU and an NVIDIA dGPU, Vulkan
+#   enumerates the iGPU as device 0 and the dGPU as device 1.
+#   whisper-cli defaults to device 0, which is usually the WORST option
+#   (slower than CPU). Set VOICE_PASTE_GPU_DEVICE=1 to force the dGPU,
+#   or VOICE_PASTE_GPU=0 to disable GPU entirely.
 #
 # Tunables (env):
-#   VOICE_PASTE_SECONDS    recording length (default 8)
-#   VOICE_PASTE_MODEL      whisper model name, e.g. base.en, medium.en
-#                          (default base.en)
-#   VOICE_PASTE_MODEL_PATH explicit ggml model path (overrides MODEL)
-#   VOICE_PASTE_RMS_MIN    min RMS for "speech detected" (default 0.005)
-#   VOICE_PASTE_THREADS    whisper-cli thread count (default: nproc)
+#   VOICE_PASTE_SECONDS     recording length (default 8)
+#   VOICE_PASTE_MODEL       whisper model name, e.g. base.en, medium.en
+#                           (default base.en)
+#   VOICE_PASTE_MODEL_PATH  explicit ggml model path (overrides MODEL)
+#   VOICE_PASTE_RMS_MIN     min RMS for "speech detected" (default 0.005)
+#   VOICE_PASTE_THREADS     whisper-cli thread count (default: nproc)
+#   VOICE_PASTE_GPU         "1" to use GPU, "0" to disable (default: 1)
+#   VOICE_PASTE_GPU_DEVICE  Vulkan device index (default: 1 — assumes
+#                           dGPU is at index 1, override with the index
+#                           printed by `whisper-cli ... 2>&1 | grep Vulkan`)
 
 set -euo pipefail
 
@@ -23,6 +33,8 @@ DURATION=${VOICE_PASTE_SECONDS:-8}
 MODEL_NAME=${VOICE_PASTE_MODEL:-base.en}
 RMS_MIN=${VOICE_PASTE_RMS_MIN:-0.005}
 THREADS=${VOICE_PASTE_THREADS:-$(nproc)}
+GPU=${VOICE_PASTE_GPU:-1}
+GPU_DEVICE=${VOICE_PASTE_GPU_DEVICE:-1}
 
 # Model resolution: explicit path wins, else look in standard data dir.
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/models"
@@ -77,13 +89,21 @@ fi
 # 3) Transcribe with whisper.cpp.
 #    -nt: no timestamps in output  -np: only print results to stdout
 #    Output: clean transcript to stdout, nothing on stderr.
-note 30000 "✍️ Transcribing" "running whisper.cpp ($MODEL_NAME, ${THREADS}t)…"
+if [ "$GPU" = "1" ]; then
+    BACKEND_NOTE="GPU dev $GPU_DEVICE"
+    GPU_FLAGS=(-dev "$GPU_DEVICE")
+else
+    BACKEND_NOTE="CPU ${THREADS}t"
+    GPU_FLAGS=(-ng)
+fi
+note 30000 "✍️ Transcribing" "whisper.cpp ($MODEL_NAME, $BACKEND_NOTE)…"
 
 TRIMMED=$(whisper-cli \
     -m "$MODEL_PATH" \
     -f "$TMP_WAV" \
     -l en \
     -t "$THREADS" \
+    "${GPU_FLAGS[@]}" \
     -nt -np \
     2>/dev/null \
     | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')

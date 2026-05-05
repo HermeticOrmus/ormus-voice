@@ -35,10 +35,23 @@ else
     git clone --depth 1 https://github.com/ggml-org/whisper.cpp "$WHISPER_CPP_DIR"
 fi
 
-# 2) Build (CPU). For Vulkan / CUDA see docs/recipes/gpu-vulkan.md.
-say "building whisper.cpp (CPU, Release)"
-cmake -B "$WHISPER_CPP_DIR/build" -S "$WHISPER_CPP_DIR" \
-    -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON >/dev/null
+# 2) Build. Auto-detect Vulkan toolchain; fall through to CPU if missing.
+#    For full GPU recipe (including how to get glslc on Pop!_OS), see
+#    docs/recipes/gpu-vulkan.md.
+CMAKE_FLAGS=(-DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON)
+if command -v glslc >/dev/null && [ -f /usr/include/vulkan/vulkan.h ]; then
+    say "glslc + Vulkan headers present — building with Vulkan backend"
+    CMAKE_FLAGS+=(-DGGML_VULKAN=ON)
+    # Pop!_OS / Ubuntu noble's libvulkan-dev doesn't ship spirv.hpp — add
+    # shaderc's bundled SPIRV-Headers to the include path if it's there.
+    SPIRV_HEADERS="$HOME/projects/contributions/shaderc/third_party/spirv-headers/include"
+    if [ -d "$SPIRV_HEADERS" ]; then
+        CMAKE_FLAGS+=("-DCMAKE_CXX_FLAGS=-I$SPIRV_HEADERS" "-DCMAKE_C_FLAGS=-I$SPIRV_HEADERS")
+    fi
+else
+    say "no glslc on PATH — building CPU-only (see docs/recipes/gpu-vulkan.md to add GPU)"
+fi
+cmake -B "$WHISPER_CPP_DIR/build" -S "$WHISPER_CPP_DIR" "${CMAKE_FLAGS[@]}" >/dev/null
 cmake --build "$WHISPER_CPP_DIR/build" -j --config Release >/dev/null
 
 # 3) Install whisper-cli

@@ -42,18 +42,25 @@ file.
 
 ## Performance
 
-Measured on a Core Ultra 9 275HX (24 cores, no GPU acceleration), 11 s
-of audio, `ggml-base.en` model:
+Measured on Sun (Core Ultra 9 275HX, 24 cores + RTX 5070 Ti), 11 s of
+JFK audio, hot cache:
 
-| | Cold | Hot |
+| Backend | base.en | medium.en |
 |---|---|---|
-| openai-whisper (Python) | ~8 s | ~5 s |
-| **Ormus Voice (whisper.cpp CPU)** | 1.6 s | **0.6 s** |
+| openai-whisper (Python) | ~5 s | minutes |
+| whisper.cpp CPU (24 threads) | **0.6 s** | ~3–5 s |
+| whisper.cpp Vulkan (RTX 5070 Ti) | **0.47 s** | **1.5 s** |
+| Vulkan default device 0 (Intel iGPU) | 1.66 s ← *worse than CPU* | 17 s |
 
-Sub-second on the hot path makes voice paste feel instant rather than
-*"is it working?"* GPU upgrade path documented in
-[`docs/recipes/gpu-vulkan.md`](docs/recipes/gpu-vulkan.md) — another
-3–5× on top.
+Two takeaways:
+
+1. **Sub-second voice paste is reachable on CPU alone** — no GPU
+   needed for `base.en`, just whisper.cpp's native AVX-512 + OpenMP.
+2. **GPU device selection matters more than you'd think.** On hybrid
+   iGPU + dGPU systems, Vulkan defaults to the iGPU (device 0), which
+   is *slower than CPU*. The wrapper auto-passes `-dev 1` to force the
+   dGPU. See [`docs/recipes/gpu-vulkan.md`](docs/recipes/gpu-vulkan.md)
+   for the full story including the Pop!_OS-specific glslc gotcha.
 
 ## Install
 
