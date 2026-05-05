@@ -213,11 +213,30 @@ if [ "$MODE" = "toggle" ]; then
     wav=$(mktemp -t voice-XXXXXX.wav)
     note "$((MAX_DURATION * 1000))" "🎙 Recording" "press Super+V again to stop"
     beep message
-    # Spawn arecord in the background, capped at MAX_DURATION.
-    arecord -q -d "$MAX_DURATION" -f S16_LE -r 16000 -c 1 -t wav "$wav" 2>/dev/null &
-    pid=$!
-    # Detach from this shell so arecord survives wrapper exit.
-    disown "$pid" 2>/dev/null || true
+    # Spawn arecord fully detached. setsid -f forks into a new session
+    # so SIGHUP doesn't reach it on parent exit. Crucially, redirecting
+    # all three standard FDs to /dev/null closes arecord's inherited
+    # pipe to the parent's stdout — without that, ormus-term's
+    # tokio::Command::output() blocks waiting for those FDs to drain
+    # (which only happens when arecord finishes), so the second
+    # Super+V press hits the in-flight guard and is silently ignored.
+    setsid -f arecord -q -d "$MAX_DURATION" -f S16_LE -r 16000 -c 1 \
+        -t wav "$wav" </dev/null >/dev/null 2>&1
+    # setsid -f doesn't expose the child PID. Discover it by polling
+    # the file we told arecord to write — the process opening that
+    # path is our recorder. Up to 200 ms of grace for arecord to start.
+    pid=""
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pid=$(pgrep -nf "arecord .* $wav$" | head -1)
+        [ -n "$pid" ] && break
+        sleep 0.02
+    done
+    if [ -z "$pid" ]; then
+        note 4000 "Voice paste failed" "could not start arecord"
+        rm -f "$wav"
+        clear_notify_state
+        exit 1
+    fi
     echo "$pid:$wav" > "$STATE_FILE"
     # Empty stdout = no paste happens on this press. Recording continues
     # in the background until the next press (or MAX_DURATION elapses).
