@@ -14,3 +14,10 @@
 
 ### Notes
 - On hybrid iGPU + dGPU systems, Vulkan device 0 is typically the iGPU and is *slower than CPU*. The wrapper defaults to `-dev 1` to force the dGPU. Override via `VOICE_PASTE_GPU_DEVICE` if your enumeration differs.
+
+### Added (AI rewrite hook)
+- `VOICE_PASTE_REWRITE_COMMAND` env var on the wrapper — when set, raw transcript is piped through that command before paste; stdout becomes the paste payload.
+- `bin/voice-rewrite-claude` — reference script using Anthropic API + Claude Haiku 4.5 with prompt caching on the system message.
+- `bin/voice-rewrite-ollama` — local-only alternative using a small Ollama model (recommended: `llama3.2:3b`).
+- `docs/recipes/ai-rewrite.md` — setup guide, model recommendations, tunables, failure modes.
+- Failure-tolerant wiring — if the rewriter exits non-zero or returns empty, the wrapper falls through to raw paste so a flaky network or missing API key never breaks voice paste; only the cleanup is lost.

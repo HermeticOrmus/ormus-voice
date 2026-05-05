@@ -26,6 +26,14 @@
 #   VOICE_PASTE_GPU_DEVICE  Vulkan device index (default: 1 — assumes
 #                           dGPU is at index 1, override with the index
 #                           printed by `whisper-cli ... 2>&1 | grep Vulkan`)
+#
+#   VOICE_PASTE_REWRITE_COMMAND  optional shell command to clean the
+#                                transcript via an LLM before paste.
+#                                Reads stdin, prints stdout, exits 0.
+#                                Examples:
+#                                  voice-rewrite-claude   (Anthropic API)
+#                                  voice-rewrite-ollama   (local model)
+#                                Failures fall through to raw paste.
 
 set -euo pipefail
 
@@ -127,6 +135,23 @@ esac
 if echo "$LOWER" | grep -qE '\b(\w+)\b([[:space:],-]+\1\b){3,}'; then
     note 2500 "🤫 Hallucinated repetition" "(not pasted: \"${TRIMMED:0:60}…\")"
     exit 0
+fi
+
+# 5) Optional AI rewrite. If VOICE_PASTE_REWRITE_COMMAND is set, pipe
+#    the transcript through it. The command must read stdin, print the
+#    cleaned text on stdout, and exit 0. Failures fall through to raw
+#    paste so a flaky network or missing API key never breaks voice
+#    paste — you just lose the cleanup.
+if [ -n "${VOICE_PASTE_REWRITE_COMMAND:-}" ]; then
+    REWRITTEN=$(printf '%s' "$TRIMMED" | $VOICE_PASTE_REWRITE_COMMAND 2>/dev/null || true)
+    REWRITTEN=$(echo "$REWRITTEN" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    if [ -n "$REWRITTEN" ]; then
+        PREVIEW=$(echo "$REWRITTEN" | head -c 80)
+        note 3000 "✓ Pasted (rewritten)" "$PREVIEW"
+        echo "$REWRITTEN"
+        exit 0
+    fi
+    note 3000 "⚠ Rewrite failed; raw paste" "${TRIMMED:0:60}"
 fi
 
 PREVIEW=$(echo "$TRIMMED" | head -c 80)

@@ -125,16 +125,43 @@ as they're added.
 | Bracketed paste | ✗ | ? | ✓ |
 | Hallucination filter | ? | ? | ✓ silence gate + repetition / known-output filter |
 | Backend swappable | ✗ | ✗ | ✓ (one bash file) |
-| AI rewrite hook | ✓ headline feature | ? | planned |
+| AI rewrite hook | ✓ headline feature | ? | ✓ (Claude API + Ollama) |
 | Push-to-talk | ? | ? | planned |
 
 VibeTyper's product surface wasn't documented well enough on the public
 web to fill in for sure — happy to update if anyone has links.
 
+## AI rewrite hook (the headline feature)
+
+Pipe the raw transcript through an LLM to clean up filler, apply
+punctuation, and interpret spoken punctuation ("comma", "period",
+"new line") before paste. Same idea as WisprFlow's headline feature,
+with the bonus that you control the model and the prompt.
+
+```
+"um hello there comma like how are you"
+   ↓ raw whisper transcript
+   ↓ pipe through voice-rewrite-claude (Haiku 4.5) or voice-rewrite-ollama (local)
+"Hello, how are you?"
+   ↓ paste at cursor
+```
+
+Two reference scripts ship in `bin/`:
+
+- **`voice-rewrite-claude`** — Anthropic API + Haiku 4.5 with prompt
+  caching. ~0.8–1.5 s per call, ~$0.0002 per call.
+- **`voice-rewrite-ollama`** — local Ollama. ~0.5–1.0 s with
+  `llama3.2:3b`. No network, no per-call cost.
+
+Wire either by setting `VOICE_PASTE_REWRITE_COMMAND` — the wrapper
+pipes the transcript to that command's stdin and uses its stdout as
+the paste payload. Failures fall through to raw paste so a flaky
+network or missing API key never breaks voice paste — you just lose
+the cleanup. Full guide:
+[`docs/recipes/ai-rewrite.md`](docs/recipes/ai-rewrite.md).
+
 ## Roadmap
 
-- [ ] AI rewrite hook (`voice_paste_rewrite_command`) — pipe transcript
-      through Claude / Ollama / any cleaner before paste
 - [ ] Push-to-talk via key-up handling (currently fixed-duration only)
 - [ ] Last-transcript replay (re-paste without re-recording)
 - [ ] GPU Vulkan recipe verified end-to-end (currently CPU-validated)
