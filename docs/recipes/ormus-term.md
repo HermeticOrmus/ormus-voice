@@ -107,9 +107,31 @@ mid-take) will cause the next press to enter the stop phase with no
 audio — it will notify "🤫 Empty" and clear cleanly. After that, a
 normal new press starts fresh.
 
-### What's not yet supported
+### Hold-to-talk (the WisprFlow UX)
 
-True **hold-to-talk** (record while held, stop on release) requires
-key-up handling in the terminal — currently ormus-term only fires
-`Action::VoicePaste` on key-down. That's tracked on the roadmap. For
-now, toggle is the closest available UX.
+Ormus Terminal builds from `local/all-features` (commit picks up
+`feat(voice): hold-to-talk via key-up handling`) fire
+`Action::VoicePasteRelease` on key-up of the same binding that fires
+`Action::VoicePaste` on key-down. The terminal sets
+`VOICE_PASTE_PHASE=start` env var on the start invocation and
+`VOICE_PASTE_PHASE=stop` on the stop invocation. The wrapper honors
+those explicitly (overrides any `VOICE_PASTE_MODE` setting), so
+hold-to-talk works regardless of the user's mode preference.
+
+UX flow:
+
+1. **Press and hold Super+V** — recording starts immediately, tab
+   title flips to `● Voice ▸ recording…`, system notification shows
+   "🎙 Recording — release Super+V to stop".
+2. **Speak.**
+3. **Release Super+V** — recording stops, transcription runs,
+   transcript bracketed-pastes at cursor.
+
+If you only tap briefly (sub-100 ms), the recording is too short for
+useful audio and the silence gate eats it cleanly.
+
+### Mode override
+
+The Rust side always sends `VOICE_PASTE_PHASE=start`/`stop` for hold
+UX. To opt out and use the wrapper's own MODE detection (toggle or
+fixed) instead, you'd need to strip the env var — most users won't.

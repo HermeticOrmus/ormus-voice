@@ -213,6 +213,26 @@ transcribe_and_paste() {
 
 # --- Mode dispatch ------------------------------------------------------
 
+PHASE="${VOICE_PASTE_PHASE:-}"
+
+# Explicit PHASE wins — used by ormus-term hold-to-talk where Rust
+# fires the wrapper once on key-down (PHASE=start) and once on key-up
+# (PHASE=stop). When PHASE is unset, fall through to MODE-based
+# auto-detection (state file present = stop, absent = start, fixed
+# means just record N seconds straight through).
+if [ "$PHASE" = "start" ]; then
+    MODE="toggle"
+    [ -f "$STATE_FILE" ] && rm -f "$STATE_FILE"  # any stale state from a crashed prior cycle
+fi
+if [ "$PHASE" = "stop" ]; then
+    MODE="toggle"
+    [ -f "$STATE_FILE" ] || {
+        note 2500 "🤫 No active recording" "stop phase fired without start"
+        clear_notify_state
+        exit 0
+    }
+fi
+
 if [ "$MODE" = "toggle" ] && [ -f "$STATE_FILE" ]; then
     # === STOP PHASE: state exists, this is the second press ===
     pid=$(cut -d':' -f1 "$STATE_FILE" 2>/dev/null || echo)
