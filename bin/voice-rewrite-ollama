@@ -33,6 +33,13 @@ Rules:
 - Do not paraphrase. Do not add content the speaker did not say.
 - If already clean, return unchanged.'
 
+if [ -n "${VOICE_REWRITE_VOCABULARY:-}" ]; then
+    SYSTEM_PROMPT="$SYSTEM_PROMPT
+
+Known proper nouns (correct any near-homophones to these canonical spellings):
+$VOICE_REWRITE_VOCABULARY"
+fi
+
 BODY=$(jq -n \
     --arg model "$MODEL" \
     --arg system "$SYSTEM_PROMPT" \

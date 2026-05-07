@@ -48,6 +48,17 @@ Rules:
 - If the transcript is already clean, return it unchanged.
 - Output the cleaned text directly. Do not wrap in quotes or code blocks.'
 
+# If the wrapper passed a vocabulary list, append it to the system
+# prompt so the model corrects mishearings to the canonical spelling
+# of proper nouns. Defense in depth: --prompt biases whisper, this
+# catches what slips through.
+if [ -n "${VOICE_REWRITE_VOCABULARY:-}" ]; then
+    SYSTEM_PROMPT="$SYSTEM_PROMPT
+
+Known proper nouns (correct any near-homophones to these canonical spellings):
+$VOICE_REWRITE_VOCABULARY"
+fi
+
 # Build JSON body with prompt caching on the system prompt — first call
 # pays full system, every call within ~5 min hits cache.
 BODY=$(jq -n \

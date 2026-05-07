@@ -31,3 +31,11 @@
 
 ### Fixed
 - Notification replacement — earlier versions left "✍️ Transcribing" stuck on screen for its 30 s timeout while a "✓ Pasted" briefly flashed alongside it. Each `note()` call now uses `--print-id`/`--replace-id` so subsequent notifications replace the previous one in-place. State persists across the toggle's two-process boundary via `${XDG_RUNTIME_DIR}/ormus-voice/notify.id`.
+- Toggle stop-phase never firing — first toggle commit shipped with `arecord ... &` + `disown` which removed the job from the shell's table but left arecord's inherited stdout/stderr FDs open. ormus-term's `tokio::process::Command::output()` waits for those FDs to drain, so the wrapper's exit didn't unblock `Task::perform` and the second Super+V press hit the in-flight guard. Replaced with `setsid -f arecord ... </dev/null >/dev/null 2>&1` so the FDs close immediately on spawn. Discovers the grandchild PID via a pgrep poll against the unique WAV path.
+
+### Added (quality tuning)
+- `vocabulary.txt` config at `~/.config/ormus-voice/vocabulary.txt` — proper nouns and technical terms biasing both stages of the pipeline. Seed file with ~80 words shipped.
+- Stage 1: whisper acoustic biasing — wrapper passes `--prompt "$(cat vocab)" --carry-initial-prompt` to whisper-cli so the decoder hears proper nouns correctly. Token cap is `n_text_ctx/2` (~224 for `base.en`, ~448 for `medium.en`).
+- Stage 2: rewriter linguistic correction — wrapper exports `VOICE_REWRITE_VOCABULARY` to the rewriter, which appends a "Known proper nouns" section to its system prompt. Defense in depth — catches mishearings whisper still produces.
+- Stage 3: corrections journal — wrapper writes the last successful transcript to `~/.local/share/ormus-voice/last-paste.txt`. New `bin/voice-correct "what I actually meant"` command appends a `{ts, heard, actual}` JSONL row to `~/.local/share/ormus-voice/corrections.jsonl`. Future tuning reads this for vocabulary distillation, few-shot examples, or fine-tuning a local rewriter.
+- New recipe `docs/recipes/quality-tuning.md` covering all three stages with what-to-include / what-to-avoid guidance.

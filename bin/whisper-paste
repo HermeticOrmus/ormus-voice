@@ -45,6 +45,22 @@ GPU_DEVICE=${VOICE_PASTE_GPU_DEVICE:-1}
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/models"
 MODEL_PATH="${VOICE_PASTE_MODEL_PATH:-$DATA_DIR/ggml-${MODEL_NAME}.bin}"
 
+# Vocabulary file — biases whisper's acoustic decoder toward the
+# user's proper nouns and gets fed to the rewriter so it corrects to
+# canonical spellings.
+VOCAB_FILE="${VOICE_PASTE_VOCABULARY_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/ormus-voice/vocabulary.txt}"
+VOCAB=""
+if [ -f "$VOCAB_FILE" ]; then
+    VOCAB=$(grep -v '^\s*#' "$VOCAB_FILE" | grep -v '^\s*$' | tr '\n' ' ')
+fi
+
+# Corrections log — append-only history of what whisper heard vs what
+# the user actually wanted. Future few-shot tuning reads this. Append
+# happens out-of-band via `voice-correct` — wrapper just exposes the
+# path so other tools can find it.
+export VOICE_PASTE_CORRECTIONS_LOG="${VOICE_PASTE_CORRECTIONS_LOG:-${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/corrections.jsonl}"
+mkdir -p "$(dirname "$VOICE_PASTE_CORRECTIONS_LOG")"
+
 # Per-user runtime state — auto-cleaned on logout when XDG_RUNTIME_DIR
 # is set, falls back to /tmp otherwise.
 STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/ormus-voice"
@@ -128,17 +144,21 @@ transcribe_and_paste() {
         backend_note="CPU ${THREADS}t"
         gpu_flags=(-ng)
     fi
-    note 30000 "✍️ Transcribing" "whisper.cpp ($MODEL_NAME, $backend_note)…"
+    local vocab_note=""
+    [ -n "$VOCAB" ] && vocab_note=" +vocab"
+    note 30000 "✍️ Transcribing" "whisper.cpp ($MODEL_NAME, $backend_note$vocab_note)…"
+
+    # Build whisper-cli args. --prompt biases the acoustic decoder toward
+    # the user's vocabulary; --carry-initial-prompt makes it apply
+    # across audio chunks for long recordings.
+    local whisper_args=(-m "$MODEL_PATH" -f "$wav" -l en -t "$THREADS"
+                        "${gpu_flags[@]}" -nt -np)
+    if [ -n "$VOCAB" ]; then
+        whisper_args+=(--prompt "$VOCAB" --carry-initial-prompt)
+    fi
 
     local trimmed
-    trimmed=$(whisper-cli \
-        -m "$MODEL_PATH" \
-        -f "$wav" \
-        -l en \
-        -t "$THREADS" \
-        "${gpu_flags[@]}" \
-        -nt -np \
-        2>/dev/null \
+    trimmed=$(whisper-cli "${whisper_args[@]}" 2>/dev/null \
         | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
     if [ -z "$trimmed" ]; then
@@ -164,15 +184,20 @@ transcribe_and_paste() {
         return 0
     fi
 
-    # Optional AI rewrite.
+    # Optional AI rewrite. Pass the vocabulary along so the rewriter
+    # can correct mishearings to canonical spellings (defense in depth
+    # — even if --prompt didn't bias whisper enough, the rewriter has
+    # the term list).
     if [ -n "${VOICE_PASTE_REWRITE_COMMAND:-}" ]; then
         note 30000 "🪄 Cleaning up" "rewriting via LLM…"
         local rewritten
-        rewritten=$(printf '%s' "$trimmed" | $VOICE_PASTE_REWRITE_COMMAND 2>/dev/null || true)
+        rewritten=$(printf '%s' "$trimmed" | VOICE_REWRITE_VOCABULARY="$VOCAB" \
+            $VOICE_PASTE_REWRITE_COMMAND 2>/dev/null || true)
         rewritten=$(echo "$rewritten" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
         if [ -n "$rewritten" ]; then
             note 3000 "✓ Pasted (rewritten)" "$(echo "$rewritten" | head -c 80)"
             clear_notify_state
+            echo -n "$rewritten" > "${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/last-paste.txt"
             echo "$rewritten"
             return 0
         fi
@@ -181,6 +206,8 @@ transcribe_and_paste() {
 
     note 3000 "✓ Pasted" "$(echo "$trimmed" | head -c 80)"
     clear_notify_state
+    # Persist the last paste for voice-correct to diff against later.
+    echo -n "$trimmed" > "${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/last-paste.txt"
     echo "$trimmed"
 }
 

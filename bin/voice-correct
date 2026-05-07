@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Log a "what I actually meant" correction to the corrections journal.
+# Future few-shot tuning + vocabulary distillation reads this.
+#
+# Usage:
+#   voice-correct "the actual text I wanted"
+#   voice-correct        # interactive: prompts for actual text
+#   echo "..." | voice-correct -
+#
+# How it pairs with the wrapper:
+#
+# After a voice paste lands, if the transcript was wrong, run
+# voice-correct with what you actually meant. The script reads the
+# most-recent transcript from the wrapper's last-paste log (which
+# whisper-paste writes after every successful paste — see below) and
+# logs a {heard, actual, ts} JSONL row to the corrections journal.
+#
+# The wrapper writes its last successful transcript to:
+#   ${XDG_DATA_HOME:-~/.local/share}/ormus-voice/last-paste.txt
+#
+# Periodically distill corrections.jsonl into vocabulary.txt or a
+# few-shot examples block — that's the long-term tuning loop.
+
+set -euo pipefail
+
+LAST_PASTE="${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/last-paste.txt"
+JOURNAL="${VOICE_PASTE_CORRECTIONS_LOG:-${XDG_DATA_HOME:-$HOME/.local/share}/ormus-voice/corrections.jsonl}"
+mkdir -p "$(dirname "$JOURNAL")"
+
+# Resolve the "actual" text from arg, stdin, or interactive prompt.
+if [ "${1:-}" = "-" ]; then
+    actual=$(cat)
+elif [ $# -ge 1 ]; then
+    actual="$*"
+else
+    if [ -t 0 ]; then
+        printf "What did you actually mean? > " >&2
+        read -r actual
+    else
+        actual=$(cat)
+    fi
+fi
+
+actual=$(echo "$actual" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+[ -n "$actual" ] || { echo "voice-correct: no text provided" >&2; exit 1; }
+
+heard=""
+[ -f "$LAST_PASTE" ] && heard=$(cat "$LAST_PASTE")
+
+# Skip logging if heard == actual (nothing to learn from).
+if [ "$heard" = "$actual" ]; then
+    echo "voice-correct: no diff between heard and actual; nothing logged" >&2
+    exit 0
+fi
+
+ts=$(date -Iseconds)
+jq -nc \
+    --arg ts "$ts" \
+    --arg heard "$heard" \
+    --arg actual "$actual" \
+    '{ts: $ts, heard: $heard, actual: $actual}' \
+    >> "$JOURNAL"
+
+echo "logged correction → $JOURNAL"
+echo "  heard:  ${heard:-<none>}"
+echo "  actual: $actual"
