@@ -1,5 +1,21 @@
-# Ormus Voice
+<p align="center">
+  <img src="https://ormus.solutions/mascot/chain_braces_to_swan.gif" alt="Ormus Voice" width="128" style="image-rendering: pixelated;" />
+</p>
 
+<h1 align="center">Ormus Voice</h1>
+
+<p align="center">
+  <em>Voice paste for Linux terminals — works inside SSH, tmux, screen because it injects into the PTY, not the OS clipboard. whisper.cpp pipeline, sub-second latency on CPU.</em>
+</p>
+
+<p align="center">
+  <a href="https://github.com/HermeticOrmus/ormus-voice/stargazers"><img src="https://img.shields.io/github/stars/HermeticOrmus/ormus-voice?style=flat-square&color=aa8142" alt="Stars" /></a>
+  <a href="https://github.com/HermeticOrmus/ormus-voice/blob/main/LICENSE"><img src="https://img.shields.io/github/license/HermeticOrmus/ormus-voice?style=flat-square&color=aa8142" alt="License" /></a>
+  <a href="https://github.com/HermeticOrmus/ormus-voice/commits"><img src="https://img.shields.io/github/last-commit/HermeticOrmus/ormus-voice?style=flat-square&color=aa8142" alt="Last Commit" /></a>
+  <img src="https://img.shields.io/badge/Claude_Code-aa8142?style=flat-square&logo=anthropic&logoColor=white" alt="Claude Code" />
+</p>
+
+---
 Voice paste for Linux terminals. Press a key, speak, get the transcript
 inserted at your cursor — and unlike every commercial alternative, it
 works inside SSH, tmux, screen, mosh, and distrobox.
